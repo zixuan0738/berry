@@ -1,0 +1,238 @@
+---
+title: "Sberry_cleaning"
+author: "mary liu"
+date: "10/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+library(tidyverse)
+library(magrittr)
+library(naniar)
+#install.packages('kableExtra')
+library(kableExtra)
+
+opts_chunk$set(echo = FALSE, 
+               warning = FALSE,
+               message = FALSE)
+```
+
+##  Acquire and read the data
+
+These data were collected from the USDA database selector: <a href="https://quickstats.nass.usda.gov">https://quickstats.nass.usda.gov</a>
+
+The data were <a href="https://quickstats.nass.usda.gov/results/D416E96E-3D5C-324C-9334-1D38DF88FFF1">stored online</a> and then downloaded as a CSV file.
+
+
+```{r}
+
+## read the data
+
+ag_data <- read_csv("C:/Users/49431/Downloads/berries(1).csv", col_names = TRUE)
+
+## look at number of unique values in each column
+ag_data %>% summarize_all(n_distinct) -> aa
+
+
+## make a list of the columns with only one unique value
+bb <- which(aa[1,]==1)
+
+## list the 1-unique value column names 
+cn <- colnames(ag_data)[bb]
+
+```
+
+Data selected from the NASS database often has columns without any data or with a single repeated Values.  The berries data had only 8 out of 21 columns containing meaningful data.
+
+```{r}
+
+
+## remove the 1-unique columns from the data set
+ag_data %<>% select(-all_of(bb))
+
+aa %<>% select(-all_of(bb)) 
+
+
+## State name and the State ANSI code are (sort of) redundant
+## Just keep the name
+ag_data %<>% select(-4)
+aa %<>% select(-4) 
+
+
+kable(head(ag_data)) %>% kable_styling(font_size=12)
+
+
+```
+
+<hr>
+<br>
+
+
+
+```{r}
+berry <- unique(ag_data$Commodity)
+nberry <- length(berry)
+
+```
+
+This table contains informaton about  berries: blueberries, raspberries, and strawberries.
+
+When the data have been cleaned and organized, the three kinds of berries will be separted into tables with the same stucture so that they can be compared.  So, working with Blueberries along demonstrates how the data will be cleaned and organized for all three kinds of berries. Only the "YEAR" time periond will be considered.
+
+
+## Data Strawberries
+Cleaning Data Item colume
+```{r}
+sberry <- ag_data %>% filter((Commodity=="STRAWBERRIES") & (Period=="YEAR"))
+sberry %<>% select(-c(Period, Commodity))   
+
+# Does every Data Item begin with "strawberries"
+sum(str_detect(sberry$`Data Item`, "^STRAWBERRIES, ")) == length(sberry$`Data Item`)
+
+
+# Separated strawberries colume to STRAWBERRY and data_idem, then dropped column strawberries
+sberry %<>% separate(`Data Item`, c('strawberries', 'data item'), sep = nchar("STRAWBERRIES")+2)
+sberry %<>% select(-c(strawberries))
+
+
+sberry %<>% separate('data item', c('Type', 'Measure', 'What'), sep = ",")
+#sberry$type %>% unique()
+
+# fixed the content in measure colume
+sberry %<>% mutate(Measure = ifelse(Type == "PROCESSING", What, Measure))
+sberry %<>% mutate(What = ifelse(Type == "PROCESSING", "", What))
+#sberry$Type %>% unique()
+
+# fixed the content in type colume
+sberry %<>% mutate(Type = ifelse(Type == "FRESH MARKET", "FRESH MARKET - UTILIZED - PRODUCTION", Type))
+sberry %<>% mutate(Measure = ifelse(Type == "FRESH MARKET - UTILIZED - PRODUCTION", What, Measure))
+sberry %<>% mutate(What = ifelse(Type == "FRESH MARKET - UTILIZED - PRODUCTION", "", What))
+
+
+# Made the Measure colume easiler to see
+sberry %<>% separate(`Measure`, c('a', 'Measure'), sep = nchar("MEASURED IN") + 1)
+sberry %<>% select(-c(a))
+
+#sberry$Type %>% unique()
+#sberry$Measure %>% unique()
+#sberry$What %>% unique()
+
+#deleted what column
+sberry %<>% select(-c(What))
+
+```
+Cleaning Domain and Domain Category colume
+
+```{r}
+sberry$Domain %>% unique()
+
+# Separate the Domain column
+sberry %<>% separate(Domain, c('Domain_1', 'Domain_2'), sep = ",")
+sberry[is.na(sberry)] <- " "
+
+
+#sberry$'Domain 1' %>% unique()
+#sberry$'Domain 2' %>% unique()
+sberry %<>% mutate(Domain_1 = 'Chemical', Domain_1 = '') 
+
+sberry %<>% mutate(Chemical=paste(Domain_1, Domain_2)) 
+sberry %<>% select(-c(Domain_1, Domain_2))
+
+
+# separate Domain Category 
+#sberry$`Domain Category` %>% unique()
+
+sberry %<>% separate('Domain Category', c("DC_1", "DC_2"), sep = ", ")
+sberry %<>% separate(DC_1, c("DC_11", "DC_12"), sep = ": ")
+sberry %<>% separate(DC_2, c("DC_21", "DC_22"), sep = ": ") 
+
+sberry[is.na(sberry)] <- " "
+
+
+sberry %<>%  select(-DC_11) 
+sberry %<>% select(-DC_21)
+
+
+
+sberry %<>% rename(Chem_family = DC_12,
+                    Material = DC_22,
+                       )
+
+sberry %<>% mutate(Chemical = str_trim(paste(Chem_family, Chemical)))
+sberry %<>% select(-Chem_family)
+kable(head(sberry, n = 10)) %>%
+  kable_styling(font_size=10)
+
+
+#sberry$'Domain Category 1' %>% unique()
+```
+
+
+```{r}
+write.csv(sberry, "sberry_cleaned.csv")
+write.csv(ag_data, "ag_data.csv")
+```
+
+## EDA(Exploratory Data Analysis)
+
+### Variables
+
+There are total 10 variables after cleaning. The ten variables in data Strawberries is Year, State, Type, Measure, Domain 1, Domain 2, Domain Category 1, Domain Category 2, Domain Category Detail.
+
+### Observations 
+
+There are total 3220 observations. The head eight observations are listed below:  
+
+```{r readin_top10}
+
+# top 10 observations
+knitr::kable(head(sberry,10)[, 1:7])
+``` 
+
+### Missing Values
+
+First I conduct basic data reprocessing. Missing values for sberry dataset are shown in the histogram below. The plot below shows that 	only Material variable has missing value.
+
+```{r check_missings}
+sberry[sberry == ' '] = NA
+# observations contains NA
+
+num = complete.cases(sberry)
+missing = data.frame(sberry)
+#rownames(missing) = 'missing values'
+gg_miss_var(missing) + theme(text = element_text(size=7)) +
+  ylab('Number of Missing Values in Each Variable')
+```
+### Compared variables
+I compared the chemical values by different states.
+
+```{r}
+df <- sberry %<>% filter(Type == 'BEARING - APPLICATIONS') 
+df %<>% filter(Measure == ' NUMBER')
+df$Value <- as.numeric(df$Value)
+p1 <- ggplot(df, aes(x = Chemical, y = Value, fill = State)) + 
+        geom_boxplot() +
+       facet_wrap(~Chemical,scales = "free")
+p1
+
+
+
+```
+## Shiny app
+
+please see file app.R
+
+## slide
+
+please see file berry.PPT
+
+## reference
+
+Class recording 11, 14-18, MA615
+
+http://rstudio.github.io/shiny/tutorial/
+
+https://shiny.rstudio.com/tutorial/
+
+Garrett Grolemund, Hadley Wickham, R for Data Science, https://r4ds.had.co.nz/
